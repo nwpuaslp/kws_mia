@@ -1,9 +1,9 @@
 '''
-@Author: your name
+@Author: zhyyao
 @Date: 2020-01-17 21:10:49
 @LastEditTime : 2020-01-18 09:23:04
-@LastEditors  : Please set LastEditors
-@Description: In User Settings Edit
+@LastEditors  : Vim
+@Description: You can use this script to draw roc curve picture
 @FilePath: /yao_workspace/kws_mia/local/kws_draw_roc.py
 '''
 import argparse

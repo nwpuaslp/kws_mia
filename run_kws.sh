@@ -103,7 +103,8 @@ fi
 if [ $stage -le 7 ];then
 # use aishell tri3a align kws data
 	for i in train dev test;do
-		awk '{print $1,"你好米雅"}' $data_kws/$i/wav.scp> $data_kws/$i/text 
+        # In aishll lexicon, we don't have the word "你好米雅". This will cause an error in aligning hi-mia audio.
+		awk '{print $1,"你好 米 雅"}' $data_kws/$i/wav.scp> $data_kws/$i/text 
 	done
 	for i in utt2spk spk2utt feats.scp cmvn.scp text wav.scp;do
 		cat $data_kws/train/$i $data_kws/test/$i $data_kws/dev/$i > $data_kws/$i
@@ -121,7 +122,7 @@ if [ $stage -le 7 ];then
 	cat $data_aishell/test/wav.scp | awk '{print $1, 0}' > data/merge/negative
 	cat $data_kws/test/wav.scp | awk '{print $1, 1}' > data/merge/positive
 
-	cat $test_merge_data/negative $test_merge_data/positive | sort > data/merge/label
+	cat data/merge/negative data/merge/positive | sort > data/merge/label
 	rm data/merge/negative
 	rm data/merge/positive
 	
@@ -155,7 +156,7 @@ fi
 
 if [ $stage -le 9 ];then
 	echo "merge and change alignment"
-    awk -v hotword_phone=data/lang_test/phones.txt \
+    awk -v hotword_phone=$kws_dict/phones.txt \
     'BEGIN {
         while (getline < hotword_phone) {
             map[$1] = $2 
@@ -187,7 +188,7 @@ if [ $stage -le 9 ];then
 	cp $ali/final.mdl exp/kws_ali_test || exit 1;
 	cp $ali/num_jobs exp/kws_ali_test || exit 1;
 	cp $ali/tree exp/kws_ali_test || exit 1;
-	cp data/lang_test/phones.txt exp/kws_ali_test || exit 1;
+	cp $kws_dict/phones.txt exp/kws_ali_test || exit 1;
 	ali=exp/kws_ali_test
 fi
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env python2
 '''
-@Author: zhyyao
+@Author: your name
 @Date: 2020-01-17 21:10:49
 @LastEditTime : 2020-01-18 09:23:04
-@LastEditors  : Vim
-@Description: You can use this script to draw roc curve picture
+@LastEditors  : Please set LastEditors
+@Description: In User Settings Edit
 @FilePath: /yao_workspace/kws_mia/local/kws_draw_roc.py
 '''
 import argparse

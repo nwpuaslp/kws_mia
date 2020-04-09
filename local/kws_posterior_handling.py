@@ -1,9 +1,9 @@
 '''
-@Author: zhyyao
+@Author: your name
 @Date: 2020-01-17 20:09:37
 @LastEditTime : 2020-01-17 21:20:03
-@LastEditors  : Vim
-@Description: Using this script to process neural network output. You can also see paper writen by Chen guoguo
+@LastEditors  : Please set LastEditors
+@Description: In User Settings Edit
 @FilePath: /yao_workspace/kws_mia/local/kws_posterior_handling.py
 '''
 import numpy as np

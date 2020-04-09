@@ -4,6 +4,9 @@
 data=/home/work_nfs2/xshi/corpus/aishell1
 data_aishell=data/aishell
 data_kws=data/kws
+data_train=$data_kws/train
+data_test=$data_kws/test
+data_local_dict=data/local/dict
 data_url=www.openslr.org/resources/33
 kws_url=www.openslr.org/resources/85
 
@@ -13,8 +16,12 @@ kws_ali=exp/tri3a_kws_ali
 feat_dir=data/fbank
 
 kws_dict=data/dict
+kws_lang=data/lang
 
-stage=11
+kws_word=你好米雅
+kws_phone="n i3 h ao3 m i3 ii ia3"
+
+stage=14
 
 # if false we will not train aishell model,
 do_train_aishell1=$false
@@ -23,19 +30,20 @@ do_train_aishell1=$false
 . ./path.sh
 
 if [ $stage -le 0 ]; then
-	if [ do_train_aishell1 ];then
+	if [ $do_train_aishell1 ];then
+		echo "do train aishell1"
 		local/download_and_untar.sh $data_aishell $data_url data_aishell.tgz || exit 1;
 		local/download_and_untar.sh $data_aishell $data_url resource_aishell.tgz || exit 1;
 	fi
-	local/download_and_untar.sh $data_kws $kws_url dev.tar.gz || exit 1;
-	local/download_and_untar.sh $data_kws $kws_url test.tar.gz || exit 1;
-	local/download_and_untar.sh $data_kws $kws_url train.tar.gz ||exit 1;
+	# local/download_and_untar.sh $data_kws $kws_url dev.tar.gz || exit 1;
+	# local/download_and_untar.sh $data_kws $kws_url test.tar.gz || exit 1;
+	# local/download_and_untar.sh $data_kws $kws_url train.tar.gz ||exit 1;
 	# You should write your own path to this script
 	local/prepare_kws.sh || exit 1;
 fi
 
 if [ $stage -le 1 ]; then
-	if [ do_train_aishell1 ];then
+	if [ $do_train_aishell1 ];then
 		# Lexicon Preparation,
 		local/aishell_prepare_dict.sh data/aishell/local || exit 1;
 
@@ -59,7 +67,7 @@ fi
 if [ $stage -le 2 ];then
 	mfccdir=mfcc
 	for x in  train dev test; do
-		if [ do_train_aishell1 ];then
+		if [ $do_train_aishell1 ];then
 			steps/make_mfcc.sh --cmd "$train_cmd" --nj 10 $data_aishell/$x exp/make_mfcc/aishell/$x $data_aishell/$mfccdir || exit 1;
 			steps/compute_cmvn_stats.sh $data_aishell/$x exp/make_mfcc/aishell/$x $data_aishell/$mfccdir || exit 1;
 			utils/fix_data_dir.sh $data_aishell/$x || exit 1;
@@ -70,7 +78,7 @@ if [ $stage -le 2 ];then
 	done
 fi
 
-if [ do_train_aishell1 ];then
+if [ $do_train_aishell1 ];then
 
 if [ $stage -le 3 ];then
 	steps/train_mono.sh --cmd "$train_cmd" --nj 10 \
@@ -102,8 +110,10 @@ fi
 
 if [ $stage -le 7 ];then
 # use aishell tri3a align kws data
+	echo "stage 7"
 	for i in train dev test;do
-		awk '{print $1,"你好米雅"}' $data_kws/$i/wav.scp> $data_kws/$i/text 
+		awk '{print $1,"'$kws_word'"}' $data_kws/$i/wav.scp > $data_kws/$i/text
+		# paste -d " " < awk '{print $1}' $data_kws/$i/wav.scp < echo $kws_word > $data_kws/$i/text 
 	done
 	for i in utt2spk spk2utt feats.scp cmvn.scp text wav.scp;do
 		cat $data_kws/train/$i $data_kws/test/$i $data_kws/dev/$i > $data_kws/$i
@@ -112,117 +122,102 @@ if [ $stage -le 7 ];then
 	mkdir -p data/merge
 	for i in train dev test;do
 		mkdir -p data/merge/$i
-		for j in utt2spk spk2utt feats.scp cmvn.scp text wav.scp;do
+		for j in utt2spk spk2utt feats.scp cmvn.scp wav.scp;do
 			cat $data_aishell/$i/$j $data_kws/$i/$j > data/merge/$i/$j
 		done
+		awk '{print $1,"<GBG>"}' $data_aishell/$i/text > $data_aishell/$i/text.neg
+		cat $data_aishell/$i/text.neg $data_kws/$i/text > data/merge/$i/text
 		utils/fix_data_dir.sh data/merge/$i || exit 1;
 	done
 
 	cat $data_aishell/test/wav.scp | awk '{print $1, 0}' > data/merge/negative
 	cat $data_kws/test/wav.scp | awk '{print $1, 1}' > data/merge/positive
 
-	cat $test_merge_data/negative $test_merge_data/positive | sort > data/merge/label
+	cat data/merge/negative data/merge/positive | sort > data/merge/label
 	rm data/merge/negative
 	rm data/merge/positive
-	
-	
-	steps/align_fmllr.sh --cmd "$train_cmd" --nj 50 \
-      data/merge/train $data_aishell/lang exp/tri3a $ali || exit 1;
+		
 fi
 
 if [ $stage -le 8 ];then
-	[ ! -d $kws_dict ] && mkdir -p $kws_dict;
-    echo "Prepare keyword phone & id"
+	cat <<EOF > $data_local_dict/lexicon.txt
+SIL sil
+<GBG> sil
+$kws_word $kws_phone
+EOF
+	local/prepare_dict.sh $data_local_dict
+	utils/prepare_lang.sh $data_local_dict "<GBG>" data/local/lang data/lang
+	mkdir -p data/local/arpa
+	cat <<EOF > data/local/arpa/arpa
+\data\\
+ngram 1=4
+ngram 2=2
+ngram 3=1
 
-	cat <<EOF > $kws_dict/lexicon.txt
-sil sil
-<SPOKEN_NOISE> sil
-<gbg> <GBG>
-你好米雅 n i3 h ao3 m i3 ii ia3
+\1-grams:
+-0.7781512  <unk>   0
+0   <s> -5.8119392
+-0.38021123 </s>    0
+-0.38021123 ${kws_word}    -0.30103
+
+\2-grams:
+-0.1497623  ${kws_word} </s>   0
+-3.8828972e-7   <s> ${kws_word}    -5.8119392
+
+\3-grams:
+-2.070878e-7    <s> ${kws_word} </s>
+
+\end\\
 EOF
-	echo "<eps> 0
-sil 1" > $kws_dict/phones.txt
-	count=2
-    awk '{for(i=2;i<=NF;i++){if(!match($i,"sil"))print $i}}' $kws_dict/lexicon.txt | sort | uniq  | while read line;do
-		echo "$line $count"
-		count=`expr $count + 1`
-	done >> $kws_dict/phones.txt
-	cat <<EOF > $kws_dict/words.txt
-<gbg> 0
-你好米雅 1
-EOF
+	gzip -c data/local/arpa/arpa > data/local/arpa/arpa.gz
+	utils/format_lm.sh data/lang data/local/arpa/arpa.gz \
+		$data_local_dict/lexicon.txt data/lang_test
 fi
 
 if [ $stage -le 9 ];then
-	echo "merge and change alignment"
-    awk -v hotword_phone=data/lang_test/phones.txt \
-    'BEGIN {
-        while (getline < hotword_phone) {
-            map[$1] = $2 
-        }
-    }
-    {
-
-        if(!match($1, "#") && !match($1, "<")) { 
-			if(match($1, "sil"))
-			{
-				printf("%s %s\n", $2, 1)
-			}
-			else
-			{
-				printf("%s %s\n", $2, map[$1] != "" ? map[$1] : 2)
-			}
-        }
-    }
-    ' $data_aishell/lang/phones.txt > data/phone.map
-	mkdir -p exp/kws_ali_test
-	cur=`cat $ali/num_jobs`
-	for x in `seq 1 $cur`;do
-		gunzip -c $ali/ali.$x.gz | 
-		ali-to-phones --per-frame=true exp/tri3a/final.mdl ark:- t,ark:- | 
-		utils/apply_map.pl -f 2- data/phone.map |
-		copy-int-vector t,ark:- ark,scp:exp/kws_ali_test/ali.$x.ark,exp/kws_ali_test/ali.$x.scp 
-	done
-	cat exp/kws_ali_test/ali.*.scp > exp/kws_ali_test/ali.scp
-	cp $ali/final.mdl exp/kws_ali_test || exit 1;
-	cp $ali/num_jobs exp/kws_ali_test || exit 1;
-	cp $ali/tree exp/kws_ali_test || exit 1;
-	cp data/lang_test/phones.txt exp/kws_ali_test || exit 1;
-	ali=exp/kws_ali_test
+	steps/train_mono.sh --cmd "$train_cmd" --nj 50 \
+        $data_train $kws_lang exp/mono || exit 1;
 fi
 
+# align
 if [ $stage -le 10 ];then
-	echo "Extracting feats & Create tr cv set"
-	[ ! -d $feat_dir ] && mkdir -p $feat_dir
-    cp -r data/merge/train $feat_dir/train
-    cp -r data/merge/test $feat_dir/test
-    steps/make_fbank.sh --cmd "$train_cmd" --fbank-config conf/fbank71.conf --nj 50 $feat_dir/train $feat_dir/log $feat_dir/feat || exit 1;
-    steps/make_fbank.sh --cmd "$train_cmd" --fbank-config conf/fbank71.conf --nj 50 $feat_dir/test $feat_dir/log $feat_dir/feat || exit 1;
-    compute-cmvn-stats --binary=false --spk2utt=ark:$feat_dir/train/spk2utt scp:$feat_dir/train/feats.scp ark,scp:$feat_dir/feat/cmvn.ark,$feat_dir/train/cmvn.scp || exit 1;
-	utils/fix_data_dir.sh $feat_dir/train
-	utils/fix_data_dir.sh $feat_dir/test
+    steps/align_si.sh --cmd "$feature_cmd" --nj 40 \
+        data/merge/train $kws_lang exp/mono exp/mono_ali || exit 1 ;
 fi
-# train
+
+# make graph
 if [ $stage -le 11 ];then
-	num_targets=`wc -l $kws_dict/phones.txt`
-	local/nnet3/run_tdnn.sh --num_targets $num_targets
+	utils/mkgraph.sh data/lang_test exp/mono exp/mono/graph || exit 1;
 fi
 
-# p
+# alignment lattices
 if [ $stage -le 12 ];then
-	steps/nnet3/make_bottleneck_features.sh  \
-		--use_gpu true \
-		--nj 1 \
-		output.log-softmax \
-		data/fbank/test \
- 		data/fbank/test_bnf \
- 		exp/nnet3/tdnn_test_kws \
- 		exp/bnf/log \
- 		exp/bnf || exit 1;
+	steps/align_fmllr_lats.sh --stage 0 --nj 40 --cmd "queue.pl -q all.q"\
+       data/merge/train  data/lang exp/mono exp/datakws_mia_lats
 fi
-
 if [ $stage -le 13 ];then
-	copy-matrix ark:exp/bnf/raw_bnfeat_test.1.ark t,ark:exp/bnf/ark.txt
-	python local/kws_posterior_handling.py exp/bnf/ark.txt
-	python local/kws_draw_ros.py result.txt data/merge/label
+	echo "Extracting feats & Create tr cv set"
+    [ ! -d $feat_dir ] && mkdir -p $feat_dir
+	mkdir -p $feat_dir/train
+	mkdir -p $feat_dir/test
+    cp data/merge/train/* $feat_dir/train
+    cp data/merge/test/* $feat_dir/test
+	rm $feat_dir/train/feats.scp
+	rm $feat_dir/train/cmvn.scp
+	rm $feat_dir/test/feats.scp
+	rm $feat_dir/test/cmvn.scp
+    steps/make_fbank.sh --cmd "$feature_cmd" --fbank-config conf/fbank71.conf --nj 50 $feat_dir/train $feat_dir/log $feat_dir/train_feat || exit 1;
+    steps/make_fbank.sh --cmd "$feature_cmd" --fbank-config conf/fbank71.conf --nj 50 $feat_dir/test $feat_dir/log $feat_dir/test_feat || exit 1;
+    compute-cmvn-stats --binary=false --spk2utt=ark:$feat_dir/train/spk2utt scp:$feat_dir/train/feats.scp ark,scp:$feat_dir/train_feat/cmvn.ark,$feat_dir/train/cmvn.scp || exit 1;
+	compute-cmvn-stats --binary=false --spk2utt=ark:$feat_dir/train/spk2utt scp:$feat_dir/train/feats.scp ark,scp:$feat_dir/train_feat/cmvn.ark,$feat_dir/train/cmvn.scp || exit 1;
+    utils/fix_data_dir.sh $feat_dir/train
+    utils/fix_data_dir.sh $feat_dir/test
+
 fi
+# train chain model
+if [ $stage -le 14 ];then
+	local/chain/run_tdnn.sh 
+fi
+exit 1;
+
+

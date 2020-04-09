@@ -19,8 +19,8 @@ set -e
 
 # configs for 'chain'
 affix=kws
-stage=8
-train_stage=-10
+stage=13
+train_stage=51
 get_egs_stage=-10
 dir=exp/chain/tdnn_1b  # Note: _sp will get added to this
 decode_iter=
@@ -32,7 +32,7 @@ final_effective_lrate=0.0001
 max_param_change=2.0
 final_layer_normalize_target=0.5
 num_jobs_initial=2
-num_jobs_final=4
+num_jobs_final=2
 nj=15
 minibatch_size=128
 dropout_schedule='0,0@0.20,0.3@0.50,0'
@@ -58,9 +58,9 @@ fi
 
 dir=${dir}${affix:+_$affix}_sp
 train_set=fbank/train
-test_sets="dev test"
-ali_dir=exp/tri3a_merge_ali
-treedir=exp/chain/tri4_cd_tree_sp
+test_sets="fbank/test"
+ali_dir=exp/mono_ali
+treedir=exp/chain/mono_cd_tree_sp
 lang=data/lang_chain
 
 if [ $stage -le 5 ]; then
@@ -121,7 +121,7 @@ if [ $stage -le 7 ]; then
   # use the same num-jobs as the alignments
   nj=$(cat $ali_dir/num_jobs) || exit 1;
   steps/align_fmllr_lats.sh --nj $nj --cmd "$train_cmd" data/$train_set \
-    data/lang exp/tri3 exp/tri4_sp_lats
+    data/lang exp/tri3 exp/datakws_mia_lats
   rm exp/tri4_sp_lats/fsts.*.gz # save space
 fi
 
@@ -130,7 +130,7 @@ if [ $stage -le 8 ]; then
   # topo file. [note, it really has two states.. the first one is only repeated
   # once, the second one has zero or more repeats.]
   rm -rf $lang
-  cp -r data/aishell/lang $lang
+  cp -r data/lang $lang
   silphonelist=$(cat $lang/phones/silence.csl) || exit 1;
   nonsilphonelist=$(cat $lang/phones/nonsilence.csl) || exit 1;
   # Use our special topology... note that later on may have to tune this
@@ -143,28 +143,28 @@ if [ $stage -le 9 ]; then
   # step compared with other recipes.
   steps/nnet3/chain/build_tree.sh --frame-subsampling-factor 3 \
     --context-opts "--context-width=2 --central-position=1" \
-    --cmd "$train_cmd" 5000 data/$train_set $lang $ali_dir $treedir
+    --cmd "$decode_cmd" 5000 data/$train_set $lang $ali_dir $treedir
 fi
 
 if [ $stage -le 10 ]; then
   echo "$0: creating neural net configs using the xconfig parser";
-  feat_dim=$(feat-to-dim scp:data/${train_set}_hires/feats.scp -)
+  feat_dim=$(feat-to-dim scp:data/${train_set}/feats.scp -)
   num_targets=$(tree-info $treedir/tree | grep num-pdfs | awk '{print $2}')
   learning_rate_factor=$(echo "print (0.5/$xent_regularize)" | python)
   opts="l2-regularize=0.002"
   linear_opts="orthonormal-constraint=1.0"
-  output_opts="l2-regularize=0.0005 bottleneck-dim=256"
+  output_opts="l2-regularize=0.0005 bottleneck-dim=8"
 
   mkdir -p $dir/configs
   cat <<EOF > $dir/configs/network.xconfig
-  input dim=100 name=ivector
   input dim=$feat_dim name=input
 
   # please note that it is important to have input layer with the name=input
   # as the layer immediately preceding the fixed-affine-layer to enable
   # the use of short notation for the descriptor
-  fixed-affine-layer name=lda input=Append(-1,0,1,ReplaceIndex(ivector, t, 0)) affine-transform-file=$dir/configs/lda.mat
-
+  conv-relu-batchnorm-layer name=cnn1 height-in=71 height-out=71 time-offsets=-1,0,1 height-offsets=-1,0,1 num-filters-out=32
+  linear-component name=cnnl1 dim=284 $linear_opts
+  
   # the first splicing is moved before the lda layer, so no splicing here
   relu-batchnorm-dropout-layer name=tdnn1 $opts dim=1280
   linear-component name=tdnn2l dim=256 $linear_opts input=Append(-1,0)
@@ -189,12 +189,11 @@ if [ $stage -le 10 ]; then
   relu-batchnorm-dropout-layer name=tdnn11 $opts input=Append(0,3,tdnn10l,tdnn8l,tdnn6l) dim=1280
   linear-component name=prefinal-l dim=256 $linear_opts
 
-  relu-batchnorm-layer name=prefinal-chain input=prefinal-l $opts dim=1280
-  output-layer name=output include-log-softmax=false dim=$num_targets $output_opts
+  relu-batchnorm-layer name=prefinal-chain input=prefinal-l $opts dim=1280 target-rms=0.5
+  output-layer name=output include-log-softmax=false dim=$num_targets $output_opts max-change=1.5
 
-  relu-batchnorm-layer name=prefinal-xent input=prefinal-l $opts dim=1280
-  output-layer name=output-xent dim=$num_targets learning-rate-factor=$learning_rate_factor $output_opts
-
+  relu-batchnorm-layer name=prefinal-xent input=prefinal-l $opts dim=1280 target-rms=0.5
+  output-layer name=output-xent dim=$num_targets learning-rate-factor=$learning_rate_factor $output_opts max-change=1.5
 EOF
   steps/nnet3/xconfig_to_configs.py --xconfig-file $dir/configs/network.xconfig --config-dir $dir/configs/
 fi
@@ -206,15 +205,15 @@ if [ $stage -le 11 ]; then
   #fi
 
   steps/nnet3/chain/train.py --stage $train_stage \
-    --cmd "$decode_cmd" \
-    --feat.online-ivector-dir exp/chain/ivectors_${train_set}_${affix} \
+    --cmd "$cuda_cmd" \
     --feat.cmvn-opts "--norm-means=false --norm-vars=false" \
     --chain.xent-regularize $xent_regularize \
     --chain.leaky-hmm-coefficient 0.1 \
     --chain.l2-regularize 0.00005 \
     --chain.apply-deriv-weights false \
     --chain.lm-opts="--num-extra-lm-states=2000" \
-    --egs.dir "$common_egs_dir" \
+    --egs.cmd "$egs_cmd" \
+	--egs.dir "$common_egs_dir" \
     --egs.stage $get_egs_stage \
     --egs.opts "--frames-overlap-per-eg 0" \
     --egs.chunk-width $frames_per_eg \
@@ -227,10 +226,12 @@ if [ $stage -le 11 ]; then
     --trainer.optimization.initial-effective-lrate $initial_effective_lrate \
     --trainer.optimization.final-effective-lrate $final_effective_lrate \
     --trainer.max-param-change $max_param_change \
-    --cleanup.remove-egs $remove_egs \
-    --feat-dir data/${train_set}_hires \
+    --trainer.input-model $dir/51.mdl \
+	--cleanup.remove-egs $remove_egs \
+    --feat-dir data/${train_set} \
+	--egs.dir $dir/egs \
     --tree-dir $treedir \
-    --lat-dir exp/tri4_sp_lats \
+    --lat-dir exp/datakws_mia_lats \
     --dir $dir  || exit 1;
 fi
 
@@ -241,14 +242,13 @@ if [ $stage -le 12 ]; then
   utils/mkgraph.sh --self-loop-scale 1.0 data/lang_test $dir $dir/graph
 fi
 
-graph_dir=$dir/graph
+graph_dir=$dir/graph 
 if [ $stage -le 13 ]; then
   for test_set in $test_sets; do
-    nj=$(wc -l data/${test_set}_hires/spk2utt | awk '{print $1}')
+    nj=40
     steps/nnet3/decode.sh --acwt 1.0 --post-decode-acwt 10.0 \
-      --nj $nj --cmd "$decode_cmd" \
-      --online-ivector-dir exp/chain/ivectors_${test_set}_${affix} \
-      $graph_dir data/${test_set}_hires $dir/decode_${test_set} || exit 1;
+      --nj $nj --cmd "$decode_cmd" --stage 3 \
+      $graph_dir data/${test_set} $dir/decode_test || exit 1;
   done
 fi
 

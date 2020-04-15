@@ -2,9 +2,9 @@
 
 stage=0
 
-data_train_root=/home/backup_nfs2/zhyyao/kws_mia/train
-data_dev_root=/home/backup_nfs2/zhyyao/kws_mia/dev
-data_test_root=/home/backup_nfs2/zhyyao/kws_mia/test
+data_train_root=data/kws/train
+data_dev_root=data/kws/dev
+data_test_root=data/kws/test
 
 data_train=data/kws/train
 data_test=data/kws/test
@@ -16,14 +16,14 @@ echo "prepare kws data"
 if [ $stage -le 0 ];then
     
     if [ -f $data_train_root/SPEECHDATA/train.scp ];then
-        awk '{print "/home/backup_nfs2/zhyyao/kws_mia/train/SPEECHDATA/"$0 }' $data_train_root/SPEECHDATA/train.scp > $data_train_root/SPEECHDATA/train_p.scp
+        awk '{print "data/kws/train/SPEECHDATA/"$0 }' $data_train_root/SPEECHDATA/train.scp | grep "_7_" > $data_train_root/SPEECHDATA/train_p.scp
         mv $data_train_root/SPEECHDATA/train_p.scp  $data_train/wav.scp
     fi
     if [ -f $data_dev_root/SPEECHDATA/dev.scp ];then
-        awk '{print "/home/backup_nfs2/zhyyao/kws_mia/dev/SPEECHDATA/"$0 }' $data_dev_root/SPEECHDATA/dev.scp > $data_dev_root/SPEECHDATA/dev_p.scp
+        awk '{print "data/kws/dev/SPEECHDATA/"$0 }' $data_dev_root/SPEECHDATA/dev.scp | grep "_7_" > $data_dev_root/SPEECHDATA/dev_p.scp
         mv $data_dev_root/SPEECHDATA/dev_p.scp  $data_dev/wav.scp
     fi
-    awk '{print "/home/backup_nfs2/zhyyao/kws_mia/test/wav/"$0}' $data_test_root/wav.scp > $data_test_root/test_p.scp
+    awk '{print "data/kws/test/wav/"$0}' $data_test_root/wav.scp  > $data_test_root/test_p.scp
 	mv $data_test_root/test_p.scp $data_test/wav.scp
 fi
 

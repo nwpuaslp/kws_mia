@@ -1,6 +1,6 @@
 #!/bin/bash
 
-path=$1
+data=$1
 url=$2
 part=$3
 

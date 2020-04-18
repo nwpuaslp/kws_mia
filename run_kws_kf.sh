@@ -14,6 +14,10 @@ feat_dir=data/fbank
 
 kws_dict=data/dict
 
+kws_word_split="你好 米 雅"
+kws_word="你好米雅"
+kws_phone="n i3 h ao3 m i3 ii ia3"
+
 stage=11
 
 # if false we will not train aishell model,
@@ -23,19 +27,19 @@ do_train_aishell1=$false
 . ./path.sh
 
 if [ $stage -le 0 ]; then
-	if [ do_train_aishell1 ];then
+	if [ $do_train_aishell1 ];then
+		echo "do aishell 1"
 		local/download_and_untar.sh $data_aishell $data_url data_aishell.tgz || exit 1;
 		local/download_and_untar.sh $data_aishell $data_url resource_aishell.tgz || exit 1;
 	fi
-	local/download_and_untar.sh $data_kws $kws_url dev.tar.gz || exit 1;
-	local/download_and_untar.sh $data_kws $kws_url test.tar.gz || exit 1;
-	local/download_and_untar.sh $data_kws $kws_url train.tar.gz ||exit 1;
+	# local/download_and_untar.sh $data_kws $kws_url dev.tar.gz || exit 1;
+	# local/download_and_untar.sh $data_kws $kws_url test.tar.gz || exit 1;
+	# local/download_and_untar.sh $data_kws $kws_url train.tar.gz ||exit 1;
 	# You should write your own path to this script
 	local/prepare_kws.sh || exit 1;
 fi
-
 if [ $stage -le 1 ]; then
-	if [ do_train_aishell1 ];then
+	if [ $do_train_aishell1 ];then
 		# Lexicon Preparation,
 		local/aishell_prepare_dict.sh data/aishell/local || exit 1;
 
@@ -59,7 +63,7 @@ fi
 if [ $stage -le 2 ];then
 	mfccdir=mfcc
 	for x in  train dev test; do
-		if [ do_train_aishell1 ];then
+		if [ $do_train_aishell1 ];then
 			steps/make_mfcc.sh --cmd "$train_cmd" --nj 10 $data_aishell/$x exp/make_mfcc/aishell/$x $data_aishell/$mfccdir || exit 1;
 			steps/compute_cmvn_stats.sh $data_aishell/$x exp/make_mfcc/aishell/$x $data_aishell/$mfccdir || exit 1;
 			utils/fix_data_dir.sh $data_aishell/$x || exit 1;
@@ -70,7 +74,7 @@ if [ $stage -le 2 ];then
 	done
 fi
 
-if [ do_train_aishell1 ];then
+if [ $do_train_aishell1 ];then
 
 if [ $stage -le 3 ];then
 	steps/train_mono.sh --cmd "$train_cmd" --nj 10 \
@@ -103,7 +107,9 @@ fi
 if [ $stage -le 7 ];then
 # use aishell tri3a align kws data
 	for i in train dev test;do
-		awk '{print $1,"你好米雅"}' $data_kws/$i/wav.scp> $data_kws/$i/text 
+		echo $kws_word_split
+		awk '{print $1}' $data_kws/$i/wav.scp | while read line; do echo $line" "$kws_word_split;done >$data_kws/$i/text
+		#awk -v word=$kws_word_split '{print $1,word}' $data_kws/$i/wav.scp> $data_kws/$i/text 
 	done
 	for i in utt2spk spk2utt feats.scp cmvn.scp text wav.scp;do
 		cat $data_kws/train/$i $data_kws/test/$i $data_kws/dev/$i > $data_kws/$i
@@ -120,14 +126,13 @@ if [ $stage -le 7 ];then
 
 	cat $data_aishell/test/wav.scp | awk '{print $1, 0}' > data/merge/negative
 	cat $data_kws/test/wav.scp | awk '{print $1, 1}' > data/merge/positive
-
+	test_merge_data=data/merge
 	cat $test_merge_data/negative $test_merge_data/positive | sort > data/merge/label
 	rm data/merge/negative
 	rm data/merge/positive
 	
-	
 	steps/align_fmllr.sh --cmd "$train_cmd" --nj 50 \
-      data/merge/train $data_aishell/lang exp/tri3a $ali || exit 1;
+      		data/merge/train $data_aishell/lang exp/tri3a $ali || exit 1;
 fi
 
 if [ $stage -le 8 ];then
@@ -138,7 +143,7 @@ if [ $stage -le 8 ];then
 sil sil
 <SPOKEN_NOISE> sil
 <gbg> <GBG>
-你好米雅 n i3 h ao3 m i3 ii ia3
+$kws_word $kws_phone
 EOF
 	echo "<eps> 0
 sil 1" > $kws_dict/phones.txt
@@ -149,13 +154,13 @@ sil 1" > $kws_dict/phones.txt
 	done >> $kws_dict/phones.txt
 	cat <<EOF > $kws_dict/words.txt
 <gbg> 0
-你好米雅 1
+$kws_word 1
 EOF
 fi
 
 if [ $stage -le 9 ];then
 	echo "merge and change alignment"
-    awk -v hotword_phone=data/lang_test/phones.txt \
+    awk -v hotword_phone=$kws_dict/phones.txt \
     'BEGIN {
         while (getline < hotword_phone) {
             map[$1] = $2 
@@ -182,17 +187,18 @@ if [ $stage -le 9 ];then
 		utils/apply_map.pl -f 2- data/phone.map |
 		copy-int-vector t,ark:- ark,scp:exp/kws_ali_test/ali.$x.ark,exp/kws_ali_test/ali.$x.scp 
 	done
-	cat exp/kws_ali_test/ali.*.scp > exp/kws_ali_test/ali.scp
+	cat exp/kws_ali_test/ali.*.scp | sort -k 1 > exp/kws_ali_test/ali.scp
 	cp $ali/final.mdl exp/kws_ali_test || exit 1;
 	cp $ali/num_jobs exp/kws_ali_test || exit 1;
 	cp $ali/tree exp/kws_ali_test || exit 1;
-	cp data/lang_test/phones.txt exp/kws_ali_test || exit 1;
+	cp $kws_dict/phones.txt exp/kws_ali_test || exit 1;
 	ali=exp/kws_ali_test
 fi
 
-if [ $stage -le 10 ];then
+if [ $stage -le 0 ];then
 	echo "Extracting feats & Create tr cv set"
 	[ ! -d $feat_dir ] && mkdir -p $feat_dir
+    [ ! -d data/wav ] && ln -s $data_aishell/wav data/
     cp -r data/merge/train $feat_dir/train
     cp -r data/merge/test $feat_dir/test
     steps/make_fbank.sh --cmd "$train_cmd" --fbank-config conf/fbank71.conf --nj 50 $feat_dir/train $feat_dir/log $feat_dir/feat || exit 1;

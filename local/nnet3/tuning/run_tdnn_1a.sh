@@ -117,7 +117,7 @@ if [ $stage -le 8 ]; then
     --cleanup.remove-egs $remove_egs \
     --cleanup.preserve-model-interval 500 \
     --use-gpu true \
-    --egs.stage 0 \
+    --egs.stage -10 \
     --feat-dir=data/fbank/train \
     --targets-scp=exp/kws_ali_test/ali.scp \
     --dir=$dir  || exit 1;

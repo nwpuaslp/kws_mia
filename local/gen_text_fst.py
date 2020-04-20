@@ -21,13 +21,13 @@ def build_text_graph(keyword_phone_file, text_fst_file):
     fout = codecs.open(text_fst_file, 'w', 'utf-8')
     # start to silence/filler
     fout.write('0 1 sil <eps>\n')
-    fout.write('0 2 gbg <GBG>\n')
+    fout.write('0 2 <GBG> <gbg>\n')
     # silence to silence/filler
     fout.write('1 1 sil <eps>\n')
-    fout.write('1 2 gbg <GBG>\n')
+    fout.write('1 2 <GBG> <gbg>\n')
     # filler to silence/filler
     fout.write('2 1 sil <eps>\n')
-    fout.write('2 2 gbg <GBG>\n')
+    fout.write('2 2 <GBG> <gbg>\n')
     #final_state = 3
 
     cur_state = 3
@@ -37,6 +37,8 @@ def build_text_graph(keyword_phone_file, text_fst_file):
         fout.write('1 %d %s <eps>\n' % (cur_state, phones[0]))
         fout.write('2 %d %s <eps>\n' % (cur_state, phones[0]))
         for i in range(0, len(phones)-1):
+            # fout.write('%d %d sil <eps>\n' % (cur_state, cur_state))
+            # fout.write('%d %d <GBG> <eps>\n' % (cur_state, cur_state))
             fout.write('%d %d %s <eps>\n' % (cur_state, cur_state, phones[i]))
             if not i == len(phones) - 2:
                 fout.write('%d %d %s <eps>\n' % (cur_state, cur_state+1, phones[i+1]))

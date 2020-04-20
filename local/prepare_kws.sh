@@ -16,13 +16,13 @@ echo "prepare kws data"
 if [ $stage -le 0 ];then
     
     if [ -f $data_train_root/SPEECHDATA/train.scp ];then
-        awk '{print "data/kws/train/SPEECHDATA/"$0 }' $data_train_root/SPEECHDATA/train.scp | grep "_7_"  > $data_train_root/SPEECHDATA/train_p.scp
+        awk '{print "data/kws/train/SPEECHDATA/"$0 }' $data_train_root/SPEECHDATA/train.scp   > $data_train_root/SPEECHDATA/train_p.scp
 		mv $data_train_root/SPEECHDATA/train_p.scp $data_train_root/wav.scp
 		# for i in `seq 3901 3920`; do grep $i $data_train_root/SPEECHDATA/train_p.scp;done > $data_train_root/wav.scp 
 		# rm $data_train_root/SPEECHDATA/train_p.scp
     fi
     if [ -f $data_dev_root/SPEECHDATA/dev.scp ];then
-        awk '{print "data/kws/dev/SPEECHDATA/"$0 }' $data_dev_root/SPEECHDATA/dev.scp | grep "_7_"  > $data_dev_root/SPEECHDATA/dev_p.scp
+        awk '{print "data/kws/dev/SPEECHDATA/"$0 }' $data_dev_root/SPEECHDATA/dev.scp   > $data_dev_root/SPEECHDATA/dev_p.scp
         mv $data_dev_root/SPEECHDATA/dev_p.scp $data_dev_root/wav.scp
 		# for i in `seq 3901 3920`;do grep $i $data_dev_root/SPEECHDATA/dev_p.scp ;done > $data_dev_root/wav.scp
     	# rm $data_dev_root/SPEECHDATA/dev_p.scp

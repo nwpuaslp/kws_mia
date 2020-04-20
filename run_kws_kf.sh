@@ -18,7 +18,9 @@ kws_word_split="你好 米 雅"
 kws_word="你好米雅"
 kws_phone="n i3 h ao3 m i3 ii ia3"
 
-stage=11
+use_fst=$true
+
+stage=8
 
 # if false we will not train aishell model,
 do_train_aishell1=$false
@@ -140,9 +142,12 @@ if [ $stage -le 8 ];then
     echo "Prepare keyword phone & id"
 
 	cat <<EOF > $kws_dict/lexicon.txt
-sil sil
+sil sil 
 <SPOKEN_NOISE> sil
 <gbg> <GBG>
+$kws_word $kws_phone
+EOF
+	cat <<EOF > $kws_dict/hotword.lexicon
 $kws_word $kws_phone
 EOF
 	echo "<eps> 0
@@ -153,8 +158,9 @@ sil 1" > $kws_dict/phones.txt
 		count=`expr $count + 1`
 	done >> $kws_dict/phones.txt
 	cat <<EOF > $kws_dict/words.txt
-<gbg> 0
-$kws_word 1
+<eps> 0
+<gbg> 1
+$kws_word 2
 EOF
 fi
 
@@ -195,7 +201,16 @@ if [ $stage -le 9 ];then
 	ali=exp/kws_ali_test
 fi
 
-if [ $stage -le 0 ];then
+if [ $stage -le 10 ]; then
+	    echo "python local/gen_text_fst.py data/dict/hotword.lexicon data/dict/hotword.text.fst"
+		python local/gen_text_fst.py data/dict/hotword.lexicon data/dict/fst.txt 
+		fstcompile \
+			--isymbols=data/dict/phones.txt \
+			--osymbols=data/dict/words.txt  \
+			data/dict/fst.txt | fstdeterminize | fstminimizeencoded > data/dict/hotword.openfst || exit 1;
+		fstprint data/dict/hotword.openfst data/dict/hotword.fst.txt
+fi
+if [ $stage -le 11 ];then
 	echo "Extracting feats & Create tr cv set"
 	[ ! -d $feat_dir ] && mkdir -p $feat_dir
     [ ! -d data/wav ] && ln -s $data_aishell/wav data/
@@ -208,13 +223,13 @@ if [ $stage -le 0 ];then
 	utils/fix_data_dir.sh $feat_dir/test
 fi
 # train
-if [ $stage -le 11 ];then
+if [ $stage -le 12 ];then
 	num_targets=`wc -l $kws_dict/phones.txt`
 	local/nnet3/run_tdnn.sh --num_targets $num_targets
 fi
 
 # p
-if [ $stage -le 12 ];then
+if [ $stage -le 13 ];then
 	steps/nnet3/make_bottleneck_features.sh  \
 		--use_gpu true \
 		--nj 1 \
@@ -226,8 +241,12 @@ if [ $stage -le 12 ];then
  		exp/bnf || exit 1;
 fi
 
-if [ $stage -le 13 ];then
+if [ $stage -le 14 ];then
 	copy-matrix ark:exp/bnf/raw_bnfeat_test.1.ark t,ark:exp/bnf/ark.txt
-	python local/kws_posterior_handling.py exp/bnf/ark.txt
-	python local/kws_draw_ros.py result.txt data/merge/label
+	if [ $use_fst ];then
+		python local/run_fst.py data/dict/hotword.fst.txt exp/bnf/ark.txt > result.txt
+	else
+		python local/kws_posterior_handling.py exp/bnf/ark.txt
+	fi
+	python local/kws_draw_roc.py result.txt data/merge/label
 fi
